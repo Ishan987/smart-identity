@@ -162,24 +162,45 @@ class SmartIdentityPro(QMainWindow):
         }
 
         # ── Aadhaar card region definitions (as fractions of the bg pixmap) ──
-        # Front card regions (relative to front bg pixmap size)
+        #
+        # IMPORTANT: The front bg pixmap IS the complete visible card crop.
+        # F_BG = (0.05, 0.68, 0.50, 0.87) means we cropped a strip of the PDF.
+        # The loaded pixmap therefore shows the full front card from top to bottom.
+        #
+        # From the actual card image (measured in pixels):
+        #   Total card height = 100%
+        #   Header band ("भारत सरकार / Govt of India") : y = 0%  → 20%
+        #   Body (photo + details + disclaimer box)     : y = 20% → 78%
+        #   Aadhaar number "8579 9462 1237"             : y = 78% → 88%
+        #   Colored footer "मेरा आधार, मेरी पहचान"       : y = 88% → 100%
+        #
         self.FRONT_REGIONS = {
-            'header':        (0.0,  0.0,  1.0,  0.20),  # top header band
-            'footer_margin': (0.0,  0.78, 1.0,  0.88),  # colored footer strip
-            'footer_text':   (0.05, 0.79, 0.95, 0.87),  # "मेरा आधार, मेरी पहचान" text
-            'aadhaar_number':(0.05, 0.65, 0.75, 0.78),  # big Aadhaar number
-            'photo_frame':   (0.02, 0.17, 0.28, 0.65),  # photo area border
-            'epic_emblem':   (0.0,  0.0,  0.18, 0.20),  # Govt emblem top-left
+            'header':         (0.0,  0.0,  1.0,  0.20),   # top tricolor header
+            'aadhaar_number': (0.0,  0.76, 1.0,  0.88),   # big number row
+            'footer_margin':  (0.0,  0.86, 1.0,  1.0),    # full colored footer strip
+            'footer_text':    (0.05, 0.87, 0.95, 1.0),    # text inside footer strip
+            'photo_frame':    (0.02, 0.17, 0.28, 0.72),   # photo area border
+            'epic_emblem':    (0.0,  0.0,  0.18, 0.20),   # Govt emblem top-left
         }
 
         # Back card regions (relative to back bg pixmap size)
+        # B_BG = (0.50, 0.68, 0.94, 0.87) crop of the PDF page.
+        #
+        # Measured from actual back card image:
+        #   UIDAI header band                   : y =  0% ->  18%  (full width)
+        #   Address + QR code body              : y = 18% ->  72%
+        #   QR code location                    : x = 55%->100%, y=18%->72%
+        #   Aadhaar number "8579 9462 1237"     : y = 72% ->  84%  (full width)
+        #   VID line "9135 0506 6929 1018"      : y = 84% ->  91%  (full width)
+        #   Bottom info bar (tel/email/web)     : y = 91% -> 100%  (full width)
+        #
         self.BACK_REGIONS = {
-            'header':        (0.0,  0.0,  1.0,  0.22),  # top header band
-            'footer_margin': (0.0,  0.78, 1.0,  0.88),  # bottom footer strip
-            'footer':        (0.0,  0.88, 1.0,  1.0),   # very bottom info bar
-            'instruction':   (0.02, 0.25, 0.62, 0.62),  # disclaimer text block
-            'uid':           (0.05, 0.62, 0.75, 0.76),  # Aadhaar number on back
-            'vid':           (0.05, 0.74, 0.75, 0.86),  # VID line on back
+            'header':        (0.0,  0.0,  1.0,  0.19),   # UIDAI header band   (rows 0-64)
+            'footer_margin': (0.0,  0.93, 1.0,  0.96),   # thin separator strip (rows 313-323)
+            'footer':        (0.0,  0.94, 1.0,  1.0),    # bottom info bar      (rows 323-337)
+            'instruction':   (0.0,  0.19, 0.52, 0.80),   # left address only, avoids QR code
+            'uid':           (0.0,  0.80, 1.0,  0.88),   # FULL WIDTH UID row   (rows 276-291 = 82-86%)
+            'vid':           (0.0,  0.88, 1.0,  0.94),   # FULL WIDTH VID row   (rows 302-311 = 90-92%)
         }
 
         self.scene = QGraphicsScene()
@@ -251,23 +272,31 @@ class SmartIdentityPro(QMainWindow):
         # ── FRONT overlays ───────────────────────────────────────────
         fbg = self.front_bg_item
 
+        # Debug: print pixmap size so we can calibrate regions
+        if fbg:
+            pw, ph = fbg.pixmap().width(), fbg.pixmap().height()
+            print(f"[DEBUG] Front bg pixmap size: {pw} x {ph} px")
+
         # Front header
         if not s['front_page_header']:
             x, y, w, h = self._region_to_pixels(self.FRONT_REGIONS['header'], fbg)
+            print(f"[DEBUG] front_header overlay: x={x:.0f} y={y:.0f} w={w:.0f} h={h:.0f}")
             self.front_header_overlay = self._make_white_overlay(x, y, w, h, z=15)
             if self.front_header_overlay:
                 self.front_header_overlay.setVisible(self.front_radio.isChecked())
 
-        # Front footer margin (colored strip)
+        # Front footer margin (colored strip — "मेरा आधार, मेरी पहचान")
         if not s['front_page_footer_margin']:
             x, y, w, h = self._region_to_pixels(self.FRONT_REGIONS['footer_margin'], fbg)
+            print(f"[DEBUG] front_footer_margin overlay: x={x:.0f} y={y:.0f} w={w:.0f} h={h:.0f}")
             self.front_footer_overlay = self._make_white_overlay(x, y, w, h, z=15)
             if self.front_footer_overlay:
                 self.front_footer_overlay.setVisible(self.front_radio.isChecked())
 
-        # Front footer text ("मेरा आधार, मेरी पहचान")
+        # Front footer text only
         if not s['front_page_footer_text']:
             x, y, w, h = self._region_to_pixels(self.FRONT_REGIONS['footer_text'], fbg)
+            print(f"[DEBUG] front_footer_text overlay: x={x:.0f} y={y:.0f} w={w:.0f} h={h:.0f}")
             self.front_footer_text_overlay = self._make_white_overlay(x, y, w, h, z=16)
             if self.front_footer_text_overlay:
                 self.front_footer_text_overlay.setVisible(self.front_radio.isChecked())
@@ -275,6 +304,7 @@ class SmartIdentityPro(QMainWindow):
         # Aadhaar number on front
         if not s['aadhaar_number']:
             x, y, w, h = self._region_to_pixels(self.FRONT_REGIONS['aadhaar_number'], fbg)
+            print(f"[DEBUG] front_aadhaar_number overlay: x={x:.0f} y={y:.0f} w={w:.0f} h={h:.0f}")
             self.front_aadhaar_num_overlay = self._make_white_overlay(x, y, w, h, z=15)
             if self.front_aadhaar_num_overlay:
                 self.front_aadhaar_num_overlay.setVisible(self.front_radio.isChecked())
@@ -284,19 +314,21 @@ class SmartIdentityPro(QMainWindow):
             x, y, w, h = self._region_to_pixels(self.FRONT_REGIONS['photo_frame'], fbg)
             frame_color = QColor(0, 120, 200, 180)
             self.front_photo_frame_overlay = self._make_colored_overlay(x, y, w, h, frame_color, z=12)
-            # Make it a border only (transparent inside)
             if self.front_photo_frame_overlay:
                 self.front_photo_frame_overlay.setBrush(QBrush(Qt.transparent))
                 self.front_photo_frame_overlay.setPen(QPen(frame_color, 6))
                 self.front_photo_frame_overlay.setVisible(self.front_radio.isChecked())
 
-        # EPIC emblem
-        if not s['epic_header_emblem']:
-            # No action needed by default (emblem is part of the image)
-            pass
+        # EPIC emblem — part of header image, handled by header overlay
+        # No separate action needed unless header is shown but emblem hidden
 
         # ── BACK overlays ────────────────────────────────────────────
         bbg = self.back_bg_item
+
+        # Debug: print back pixmap size for calibration
+        if bbg:
+            bpw, bph = bbg.pixmap().width(), bbg.pixmap().height()
+            print(f"[DEBUG] Back bg pixmap size: {bpw} x {bph} px")
 
         # Rear header
         if not s['rear_page_header']:
@@ -326,16 +358,18 @@ class SmartIdentityPro(QMainWindow):
             if self.back_instruction_overlay:
                 self.back_instruction_overlay.setVisible(not self.front_radio.isChecked())
 
-        # Rear UID number
+        # Rear UID number — covers FULL WIDTH to avoid clipping QR code
         if not s['rear_page_uid']:
             x, y, w, h = self._region_to_pixels(self.BACK_REGIONS['uid'], bbg)
+            print(f"[DEBUG] back_uid overlay: x={x:.0f} y={y:.0f} w={w:.0f} h={h:.0f}")
             self.back_uid_overlay = self._make_white_overlay(x, y, w, h, z=15)
             if self.back_uid_overlay:
                 self.back_uid_overlay.setVisible(not self.front_radio.isChecked())
 
-        # VID line (back card)
+        # VID line (back card) — covers FULL WIDTH
         if not s['vid']:
             x, y, w, h = self._region_to_pixels(self.BACK_REGIONS['vid'], bbg)
+            print(f"[DEBUG] back_vid overlay: x={x:.0f} y={y:.0f} w={w:.0f} h={h:.0f}")
             self.back_vid_overlay = self._make_white_overlay(x, y, w, h, z=15)
             if self.back_vid_overlay:
                 self.back_vid_overlay.setVisible(not self.front_radio.isChecked())
