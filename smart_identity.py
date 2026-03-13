@@ -25,7 +25,21 @@ class DraggablePixmapItem(QGraphicsPixmapItem):
         self.setCursor(QCursor(Qt.OpenHandCursor))
         self.setTransformationMode(Qt.SmoothTransformation)
 
+    def _is_active(self):
+        """Only the active side's text item should be draggable."""
+        if not self.parent_widget:
+            return True
+        pw = self.parent_widget
+        if self == pw.front_data_item:
+            return pw.front_radio.isChecked()
+        if self == pw.back_data_item:
+            return pw.back_radio.isChecked()
+        return True
+
     def mousePressEvent(self, event):
+        if not self._is_active():
+            event.ignore()
+            return
         self.setCursor(QCursor(Qt.ClosedHandCursor))
         super().mousePressEvent(event)
 
@@ -119,7 +133,7 @@ class SmartIdentityPro(QMainWindow):
                 'rear_page_header': True,
                 'rear_page_footer_margin': True,
                 'rear_page_footer': True,
-                'rear_page_instruction': False,
+                'rear_page_instruction': True,
                 'rear_page_uid': True,
                 'auto_align_contents': True,
                 'photo_frame': False,
@@ -234,7 +248,9 @@ class SmartIdentityPro(QMainWindow):
         return item
 
     def _region_to_pixels(self, region_frac, bg_item):
-        """Convert a (x0,y0,x1,y1) fraction tuple to pixel coords on bg_item."""
+        """Convert a (x0,y0,x1,y1) fraction tuple to pixel coords on bg_item.
+        Uses bg_item.pos() so back-card overlays are automatically offset correctly.
+        """
         if bg_item is None:
             return 0, 0, 0, 0
         pix = bg_item.pixmap()
@@ -243,6 +259,7 @@ class SmartIdentityPro(QMainWindow):
         y0 = region_frac[1] * ph
         x1 = region_frac[2] * pw
         y1 = region_frac[3] * ph
+        # bg_item.pos() already holds the correct scene offset (0 for front, back_offset_x for back)
         bx = bg_item.pos().x()
         by = bg_item.pos().y()
         return bx + x0, by + y0, x1 - x0, y1 - y0
@@ -283,7 +300,7 @@ class SmartIdentityPro(QMainWindow):
             print(f"[DEBUG] front_header overlay: x={x:.0f} y={y:.0f} w={w:.0f} h={h:.0f}")
             self.front_header_overlay = self._make_white_overlay(x, y, w, h, z=15)
             if self.front_header_overlay:
-                self.front_header_overlay.setVisible(self.front_radio.isChecked())
+                self.front_header_overlay.setVisible(True)
 
         # Front footer margin (colored strip — "मेरा आधार, मेरी पहचान")
         if not s['front_page_footer_margin']:
@@ -291,7 +308,7 @@ class SmartIdentityPro(QMainWindow):
             print(f"[DEBUG] front_footer_margin overlay: x={x:.0f} y={y:.0f} w={w:.0f} h={h:.0f}")
             self.front_footer_overlay = self._make_white_overlay(x, y, w, h, z=15)
             if self.front_footer_overlay:
-                self.front_footer_overlay.setVisible(self.front_radio.isChecked())
+                self.front_footer_overlay.setVisible(True)
 
         # Front footer text only
         if not s['front_page_footer_text']:
@@ -299,7 +316,7 @@ class SmartIdentityPro(QMainWindow):
             print(f"[DEBUG] front_footer_text overlay: x={x:.0f} y={y:.0f} w={w:.0f} h={h:.0f}")
             self.front_footer_text_overlay = self._make_white_overlay(x, y, w, h, z=16)
             if self.front_footer_text_overlay:
-                self.front_footer_text_overlay.setVisible(self.front_radio.isChecked())
+                self.front_footer_text_overlay.setVisible(True)
 
         # Aadhaar number on front
         if not s['aadhaar_number']:
@@ -307,7 +324,7 @@ class SmartIdentityPro(QMainWindow):
             print(f"[DEBUG] front_aadhaar_number overlay: x={x:.0f} y={y:.0f} w={w:.0f} h={h:.0f}")
             self.front_aadhaar_num_overlay = self._make_white_overlay(x, y, w, h, z=15)
             if self.front_aadhaar_num_overlay:
-                self.front_aadhaar_num_overlay.setVisible(self.front_radio.isChecked())
+                self.front_aadhaar_num_overlay.setVisible(True)
 
         # Photo frame border
         if s['photo_frame']:
@@ -317,7 +334,7 @@ class SmartIdentityPro(QMainWindow):
             if self.front_photo_frame_overlay:
                 self.front_photo_frame_overlay.setBrush(QBrush(Qt.transparent))
                 self.front_photo_frame_overlay.setPen(QPen(frame_color, 6))
-                self.front_photo_frame_overlay.setVisible(self.front_radio.isChecked())
+                self.front_photo_frame_overlay.setVisible(True)
 
         # EPIC emblem — part of header image, handled by header overlay
         # No separate action needed unless header is shown but emblem hidden
@@ -335,28 +352,28 @@ class SmartIdentityPro(QMainWindow):
             x, y, w, h = self._region_to_pixels(self.BACK_REGIONS['header'], bbg)
             self.back_header_overlay = self._make_white_overlay(x, y, w, h, z=15)
             if self.back_header_overlay:
-                self.back_header_overlay.setVisible(not self.front_radio.isChecked())
+                self.back_header_overlay.setVisible(True)
 
         # Rear footer margin
         if not s['rear_page_footer_margin']:
             x, y, w, h = self._region_to_pixels(self.BACK_REGIONS['footer_margin'], bbg)
             self.back_footer_overlay = self._make_white_overlay(x, y, w, h, z=15)
             if self.back_footer_overlay:
-                self.back_footer_overlay.setVisible(not self.front_radio.isChecked())
+                self.back_footer_overlay.setVisible(True)
 
         # Rear footer bottom bar
         if not s['rear_page_footer']:
             x, y, w, h = self._region_to_pixels(self.BACK_REGIONS['footer'], bbg)
             self.back_footer_overlay2 = self._make_white_overlay(x, y, w, h, z=15)
             if self.back_footer_overlay2:
-                self.back_footer_overlay2.setVisible(not self.front_radio.isChecked())
+                self.back_footer_overlay2.setVisible(True)
 
         # Rear instruction text (disclaimer)
         if not s['rear_page_instruction']:
             x, y, w, h = self._region_to_pixels(self.BACK_REGIONS['instruction'], bbg)
             self.back_instruction_overlay = self._make_white_overlay(x, y, w, h, z=15)
             if self.back_instruction_overlay:
-                self.back_instruction_overlay.setVisible(not self.front_radio.isChecked())
+                self.back_instruction_overlay.setVisible(True)
 
         # Rear UID number — covers FULL WIDTH to avoid clipping QR code
         if not s['rear_page_uid']:
@@ -364,7 +381,7 @@ class SmartIdentityPro(QMainWindow):
             print(f"[DEBUG] back_uid overlay: x={x:.0f} y={y:.0f} w={w:.0f} h={h:.0f}")
             self.back_uid_overlay = self._make_white_overlay(x, y, w, h, z=15)
             if self.back_uid_overlay:
-                self.back_uid_overlay.setVisible(not self.front_radio.isChecked())
+                self.back_uid_overlay.setVisible(True)
 
         # VID line (back card) — covers FULL WIDTH
         if not s['vid']:
@@ -372,7 +389,7 @@ class SmartIdentityPro(QMainWindow):
             print(f"[DEBUG] back_vid overlay: x={x:.0f} y={y:.0f} w={w:.0f} h={h:.0f}")
             self.back_vid_overlay = self._make_white_overlay(x, y, w, h, z=15)
             if self.back_vid_overlay:
-                self.back_vid_overlay.setVisible(not self.front_radio.isChecked())
+                self.back_vid_overlay.setVisible(True)
 
         # Colored footer tint (orange/saffron on front)
         if not s['colored_footer']:
@@ -380,7 +397,7 @@ class SmartIdentityPro(QMainWindow):
             x, y, w, h = self._region_to_pixels(self.FRONT_REGIONS['footer_margin'], fbg)
             overlay = self._make_white_overlay(x, y, w, h, z=14)
             if overlay:
-                overlay.setVisible(self.front_radio.isChecked())
+                overlay.setVisible(True)
             # store as secondary ref
             if self.front_footer_overlay is None:
                 self.front_footer_overlay = overlay
@@ -419,20 +436,11 @@ class SmartIdentityPro(QMainWindow):
 
     def _update_overlay_visibility(self):
         """
-        Show/hide overlays depending on which side is currently active.
-        Front overlays are visible only when front is shown, and vice-versa.
+        Both cards always shown — all overlays always visible.
+        Just make sure all overlay items are shown.
         """
-        is_front = self.front_radio.isChecked()
-        front_attrs = {
-            'front_header_overlay', 'front_footer_overlay',
-            'front_footer_text_overlay', 'front_photo_frame_overlay',
-            'front_aadhaar_num_overlay', 'front_vid_overlay',
-        }
         for attr, item in self._all_overlay_items():
-            if attr in front_attrs:
-                item.setVisible(is_front)
-            else:
-                item.setVisible(not is_front)
+            item.setVisible(True)
 
     # ════════════════════════════════════════════════════════════════════
     #  SETTINGS SAVE — applies overlays immediately
@@ -870,10 +878,10 @@ class SmartIdentityPro(QMainWindow):
         self.canvas.setRenderHint(QPainter.TextAntialiasing)
         self.canvas.setOptimizationFlag(QGraphicsView.DontAdjustForAntialiasing, False)
         self.canvas.setViewportUpdateMode(QGraphicsView.FullViewportUpdate)
-        self.canvas.setMaximumHeight(600)
-        self.canvas.setMinimumHeight(600)
-        self.canvas.setMaximumWidth(600)
-        self.canvas.setMinimumWidth(600)
+        self.canvas.setMaximumHeight(560)
+        self.canvas.setMinimumHeight(560)
+        self.canvas.setMaximumWidth(1100)
+        self.canvas.setMinimumWidth(1100)
         self.canvas.setStyleSheet("QGraphicsView{background-color:#1e293b;border:2px solid #334155;border-radius:8px;}")
 
         right_panel = QWidget()
@@ -881,9 +889,8 @@ class SmartIdentityPro(QMainWindow):
         right_panel.setMaximumWidth(280)
 
         side_label = QLabel("Select Side")
-        side_label.setStyleSheet("font-weight:bold;font-size:14px;color:#93c5fd;")
-        self.front_radio = QRadioButton("Front Side")
-        self.back_radio = QRadioButton("Back Side")
+        self.front_radio = QRadioButton("✏️ Edit Front")
+        self.back_radio = QRadioButton("✏️ Edit Back")
         self.front_radio.setChecked(True)
         self.front_radio.toggled.connect(self.switch_side)
 
@@ -974,9 +981,8 @@ class SmartIdentityPro(QMainWindow):
         left_btn.clicked.connect(lambda: self.nudge_control(-1, 0))
         right_btn.clicked.connect(lambda: self.nudge_control(1, 0))
 
-        self.arrow_desc_label = QLabel("↑↓ Move Up/Down\n←→ Move Left/Right")
-        self.arrow_desc_label.setStyleSheet("color:#94a3b8;font-size:11px;margin-top:5px;")
-        self.arrow_desc_label.setAlignment(Qt.AlignCenter)
+        self.arrow_desc_label = QLabel("")  # hidden
+        self.arrow_desc_label.setVisible(False)
 
         right_layout.addWidget(move_label)
 
@@ -991,7 +997,6 @@ class SmartIdentityPro(QMainWindow):
         arrow_wrapper.addWidget(arrow_container)
         arrow_wrapper.addStretch()
         right_layout.addLayout(arrow_wrapper)
-        right_layout.addWidget(self.arrow_desc_label)
 
         zoom_label = QLabel("Canvas Zoom")
         zoom_label.setStyleSheet("font-weight:bold;font-size:14px;color:#93c5fd;margin-top:20px;")
@@ -1168,10 +1173,15 @@ class SmartIdentityPro(QMainWindow):
             painter.fillRect(btx, bty, btw, bth, Qt.white)
             painter.end()
 
+            # ── Place back card to the RIGHT of front card ──────────
+            GAP = 80  # gap in scene pixels between front and back
+            front_w = self.front_bg_original.width()
+            back_offset_x = front_w + GAP   # X start of back card in scene
+
             self.back_bg_item = QGraphicsPixmapItem(back_bg_with_blank)
             self.back_bg_item.setZValue(1)
-            self.back_bg_item.setPos(0, 0)
-            self.back_bg_item.setVisible(False)
+            self.back_bg_item.setPos(back_offset_x, 0)
+            self.back_bg_item.setVisible(True)   # always visible
             self.back_bg_item.setTransformationMode(Qt.SmoothTransformation)
             self.scene.addItem(self.back_bg_item)
 
@@ -1179,9 +1189,10 @@ class SmartIdentityPro(QMainWindow):
             self.back_data_original = QPixmap.fromImage(self.pixmap_to_qimage(back_text_pix))
             self.back_data_item = DraggablePixmapItem(self.back_data_original.copy(), self)
             self.back_data_item.setZValue(5)
-            self.back_data_item.setPos(btx, bty)
-            self.back_data_initial_pos = QPointF(btx, bty)
-            self.back_data_item.setVisible(False)
+            # back data item position is relative to scene (add back_offset_x)
+            self.back_data_item.setPos(back_offset_x + btx, bty)
+            self.back_data_initial_pos = QPointF(back_offset_x + btx, bty)
+            self.back_data_item.setVisible(True)   # always visible
             self.scene.addItem(self.back_data_item)
 
             back_mask = QPixmap(self.back_bg_original.size())
@@ -1194,14 +1205,64 @@ class SmartIdentityPro(QMainWindow):
 
             self.back_blank_item = QGraphicsPixmapItem(back_mask)
             self.back_blank_item.setZValue(10)
-            self.back_blank_item.setPos(0, 0)
-            self.back_blank_item.setVisible(False)
+            self.back_blank_item.setPos(back_offset_x, 0)
+            self.back_blank_item.setVisible(True)   # always visible
             self.back_blank_item.setTransformationMode(Qt.SmoothTransformation)
             self.scene.addItem(self.back_blank_item)
 
-            self.scene.setSceneRect(self.front_bg_item.boundingRect())
+            # Store back offset for overlay positioning
+            self.back_card_offset_x = back_offset_x
+
+            # ── Active card highlight borders (z=50, above everything) ──
+            from PyQt5.QtWidgets import QGraphicsRectItem as QGRI
+            self.front_active_border = QGRI(
+                -4, -4,
+                self.front_bg_original.width() + 8,
+                self.front_bg_original.height() + 8
+            )
+            self.front_active_border.setPen(QPen(QColor(96, 165, 250), 8))
+            self.front_active_border.setBrush(QBrush(Qt.transparent))
+            self.front_active_border.setPos(0, 0)
+            self.front_active_border.setZValue(50)
+            self.scene.addItem(self.front_active_border)
+
+            self.back_active_border = QGRI(
+                -4, -4,
+                self.back_bg_original.width() + 8,
+                self.back_bg_original.height() + 8
+            )
+            self.back_active_border.setPen(QPen(QColor(148, 163, 184), 4))
+            self.back_active_border.setBrush(QBrush(Qt.transparent))
+            self.back_active_border.setPos(back_offset_x, 0)
+            self.back_active_border.setZValue(50)
+            self.scene.addItem(self.back_active_border)
+
+            # ── Labels: "FRONT" / "BACK" above each card ─────────────
+            from PyQt5.QtWidgets import QGraphicsTextItem
+            front_lbl = QGraphicsTextItem("◀ FRONT")
+            front_lbl.setDefaultTextColor(QColor(96, 165, 250))
+            front_lbl.setFont(QFont("Segoe UI", 16, QFont.Bold))
+            front_lbl.setPos(10, -55)
+            front_lbl.setZValue(50)
+            self.scene.addItem(front_lbl)
+
+            back_lbl = QGraphicsTextItem("BACK ▶")
+            back_lbl.setDefaultTextColor(QColor(148, 163, 184))
+            back_lbl.setFont(QFont("Segoe UI", 16, QFont.Bold))
+            back_lbl.setPos(back_offset_x + 10, -55)
+            back_lbl.setZValue(50)
+            self.scene.addItem(back_lbl)
+
+            # ── Scene rect covers both cards ──────────────────────────
+            total_w = front_w + GAP + self.back_bg_original.width()
+            total_h = max(self.front_bg_original.height(), self.back_bg_original.height())
+            self.scene.setSceneRect(-10, -60, total_w + 20, total_h + 70)
+
             self.canvas.resetTransform()
-            self.canvas.scale(0.5, 0.5)
+            # Scale to fit both cards: each card ~1350px wide at 300dpi,
+            # total scene ~2780px wide → scale to fit in 1100px canvas width
+            scale = 1100.0 / (total_w + 20) * 0.92
+            self.canvas.scale(scale, scale)
             self.canvas.centerOn(self.scene.sceneRect().center())
             self.pdf_loaded = True
             self.update_spinboxes_from_item()
@@ -1235,21 +1296,28 @@ class SmartIdentityPro(QMainWindow):
         if not self.pdf_loaded:
             return
         is_front = self.front_radio.isChecked()
-        for item, vis in [(self.front_data_item, is_front), (self.back_data_item, not is_front),
-                          (self.front_bg_item,   is_front), (self.back_bg_item,   not is_front),
-                          (self.front_blank_item, is_front), (self.back_blank_item, not is_front)]:
-            if item:
-                item.setVisible(vis)
 
-        # Update overlay visibility for the newly active side
-        self._update_overlay_visibility()
+        # All items always visible — just update the active highlight borders
+        if hasattr(self, 'front_active_border') and self.front_active_border:
+            if is_front:
+                # Front active: bright blue thick border
+                self.front_active_border.setPen(QPen(QColor(96, 165, 250), 8))
+                self.back_active_border.setPen(QPen(QColor(71, 85, 105), 3))
+            else:
+                # Back active: bright blue thick border on back
+                self.front_active_border.setPen(QPen(QColor(71, 85, 105), 3))
+                self.back_active_border.setPen(QPen(QColor(96, 165, 250), 8))
 
+        # Pan canvas to center on the active card
         active_bg = self.front_bg_item if is_front else self.back_bg_item
         if active_bg:
-            self.scene.setSceneRect(active_bg.boundingRect())
-            self.canvas.centerOn(active_bg.boundingRect().center())
+            cx = active_bg.pos().x() + active_bg.pixmap().width() / 2
+            cy = active_bg.pos().y() + active_bg.pixmap().height() / 2
+            self.canvas.centerOn(QPointF(cx, cy))
+
         self.update_spinboxes_from_item()
-        self.status_label.setText(f"Showing {'Front' if is_front else 'Back'} side")
+        self.status_label.setText(
+            f"{'✏️ Editing FRONT card' if is_front else '✏️ Editing BACK card'} — both cards visible")
 
     def get_active_data_item(self):
         return self.front_data_item if self.front_radio.isChecked() else self.back_data_item
@@ -1349,10 +1417,12 @@ class SmartIdentityPro(QMainWindow):
 
     def reset_view(self):
         self.canvas.resetTransform()
-        active_bg = self.front_bg_item if self.front_radio.isChecked() else self.back_bg_item
-        if active_bg:
-            self.canvas.fitInView(active_bg.boundingRect(), Qt.KeepAspectRatio)
-            self.canvas.scale(0.425, 0.425)
+        if self.scene.sceneRect().width() > 0:
+            self.canvas.fitInView(self.scene.sceneRect(), Qt.KeepAspectRatio)
+        else:
+            active_bg = self.front_bg_item if self.front_radio.isChecked() else self.back_bg_item
+            if active_bg:
+                self.canvas.fitInView(active_bg.boundingRect(), Qt.KeepAspectRatio)
 
     def check_license_on_start(self):
         if self.is_demo:
@@ -2546,13 +2616,17 @@ class SmartIdentityPro(QMainWindow):
 
             rect = bg_item.boundingRect()
         else:
+            # Back card is offset in main scene — render it at (0,0) in temp_scene
+            offset_x = getattr(self, 'back_card_offset_x', 0)
             bg_item = QGraphicsPixmapItem(self.back_bg_item.pixmap())
             bg_item.setPos(0, 0)
             bg_item.setTransformationMode(Qt.SmoothTransformation)
             temp_scene.addItem(bg_item)
 
             data_item = QGraphicsPixmapItem(self.back_data_item.pixmap())
-            data_item.setPos(self.back_data_item.pos())
+            # Subtract the scene offset so position is card-relative
+            data_pos = self.back_data_item.pos()
+            data_item.setPos(data_pos.x() - offset_x, data_pos.y())
             data_item.setTransform(self.back_data_item.transform())
             data_item.setTransformationMode(Qt.SmoothTransformation)
             temp_scene.addItem(data_item)
@@ -2745,7 +2819,9 @@ class SmartIdentityPro(QMainWindow):
             card_painter.setRenderHint(QPainter.Antialiasing)
             card_painter.setRenderHint(QPainter.SmoothPixmapTransform)
             card_painter.save()
-            card_painter.translate(self.back_data_item.pos())
+            offset_x = getattr(self, 'back_card_offset_x', 0)
+            back_pos = self.back_data_item.pos()
+            card_painter.translate(back_pos.x() - offset_x, back_pos.y())
             card_painter.setTransform(self.back_data_item.transform(), True)
             card_painter.drawPixmap(0, 0, self.back_data_item.pixmap())
             card_painter.restore()
@@ -2888,7 +2964,9 @@ class SmartIdentityPro(QMainWindow):
         else:
             card_painter.drawPixmap(0, 0, self.back_bg_item.pixmap())
             card_painter.save()
-            card_painter.translate(self.back_data_item.pos())
+            offset_x = getattr(self, 'back_card_offset_x', 0)
+            back_pos = self.back_data_item.pos()
+            card_painter.translate(back_pos.x() - offset_x, back_pos.y())
             card_painter.setTransform(self.back_data_item.transform(), True)
             card_painter.drawPixmap(0, 0, self.back_data_item.pixmap())
             card_painter.restore()
