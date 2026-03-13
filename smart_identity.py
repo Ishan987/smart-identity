@@ -798,11 +798,11 @@ class SmartIdentityPro(QMainWindow):
 
         advanced_btn = QPushButton("⚙️ Advanced Settings")
         advanced_btn.setStyleSheet("QPushButton{background-color:#6d28d9;color:white;padding:6px;font-size:11px;border-radius:4px;}QPushButton:hover{background-color:#5b21b6;}")
-        advanced_btn.clicked.connect(self.open_settings)
+        advanced_btn.clicked.connect(lambda: self.toggle_inline_settings(True))
         settings_panel_layout.addWidget(advanced_btn)
 
         settings_container_layout.addWidget(self.settings_panel)
-        self.settings_header.toggled.connect(lambda checked: self.toggle_settings_panel(checked))
+        self.settings_header.toggled.connect(self.toggle_inline_settings)
         left_layout.addWidget(settings_container)
 
         print_label = QLabel("Export:")
@@ -883,6 +883,10 @@ class SmartIdentityPro(QMainWindow):
         self.canvas.setMaximumWidth(1100)
         self.canvas.setMinimumWidth(1100)
         self.canvas.setStyleSheet("QGraphicsView{background-color:#1e293b;border:2px solid #334155;border-radius:8px;}")
+        from PyQt5.QtWidgets import QFrame
+        self.canvas.setFrameShape(QFrame.NoFrame)
+        self.canvas.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.canvas.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
 
         right_panel = QWidget()
         right_layout = QVBoxLayout(right_panel)
@@ -1020,6 +1024,171 @@ class SmartIdentityPro(QMainWindow):
         center_layout.addWidget(left_panel)
         center_layout.addWidget(self.canvas, 1)
         center_layout.addWidget(right_panel)
+
+        # ── Inline Settings Panel (hidden by default, slides in from right) ──
+        self.inline_settings_panel = QWidget()
+        self.inline_settings_panel.setFixedWidth(280)
+        self.inline_settings_panel.setStyleSheet(
+            "QWidget{background-color:#0f172a;border-left:2px solid #334155;}"
+            "QCheckBox{color:#e5e7eb;padding:4px 2px;font-size:12px;}"
+            "QCheckBox::indicator{width:16px;height:16px;}"
+            "QLabel{color:#93c5fd;}"
+            "QSpinBox{background-color:#1e293b;border:1px solid #334155;padding:4px;color:#e5e7eb;border-radius:4px;}"
+            "QGroupBox{color:#60a5fa;font-weight:bold;border:1px solid #334155;border-radius:6px;margin-top:8px;padding:6px;}"
+            "QGroupBox::title{subcontrol-origin:margin;left:8px;padding:0 4px;}"
+        )
+        self.inline_settings_panel.setVisible(False)
+
+        isp_outer = QVBoxLayout(self.inline_settings_panel)
+        isp_outer.setContentsMargins(8, 8, 8, 8)
+        isp_outer.setSpacing(4)
+
+        # Header with close button
+        isp_header = QHBoxLayout()
+        isp_title = QLabel("⚙️  Settings")
+        isp_title.setStyleSheet("font-size:14px;font-weight:bold;color:#60a5fa;padding:4px;border:none;")
+        isp_close_btn = QPushButton("✕")
+        isp_close_btn.setFixedSize(28, 28)
+        isp_close_btn.setStyleSheet("QPushButton{background:#334155;color:#e5e7eb;border:none;border-radius:14px;font-weight:bold;font-size:13px;}QPushButton:hover{background:#ef4444;color:white;}")
+        isp_close_btn.clicked.connect(self.close_inline_settings)
+        isp_header.addWidget(isp_title)
+        isp_header.addStretch()
+        isp_header.addWidget(isp_close_btn)
+        isp_outer.addLayout(isp_header)
+
+        hint_lbl = QLabel("✨ Changes apply live instantly")
+        hint_lbl.setStyleSheet("color:#22d3ee;font-size:10px;padding:2px 4px;border:none;")
+        isp_outer.addWidget(hint_lbl)
+
+        from PyQt5.QtWidgets import QScrollArea, QCheckBox, QGroupBox as QGB
+        isp_scroll = QScrollArea()
+        isp_scroll.setWidgetResizable(True)
+        isp_scroll.setStyleSheet("QScrollArea{border:none;background:transparent;}")
+        isp_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+
+        isp_content = QWidget()
+        isp_content.setStyleSheet("background:transparent;")
+        isp_content_layout = QVBoxLayout(isp_content)
+        isp_content_layout.setSpacing(6)
+        isp_content_layout.setContentsMargins(2, 2, 2, 2)
+
+        # ── Card Elements group ──────────────────────────────────────────
+        elem_group = QGB("🃏 Card Elements")
+        elem_layout = QVBoxLayout(elem_group)
+        elem_layout.setSpacing(2)
+
+        self.settings_checkboxes = {}
+        checkbox_items = [
+            ('front_page_header',        '🔵 Front Header'),
+            ('front_page_footer_margin', '🔵 Front Footer Margin'),
+            ('front_page_footer_text',   '🔵 Front Footer Text'),
+            ('rear_page_header',         '🟠 Rear Header'),
+            ('rear_page_footer_margin',  '🟠 Rear Footer Margin'),
+            ('rear_page_footer',         '🟠 Rear Footer'),
+            ('rear_page_instruction',    '🟠 Rear Instruction'),
+            ('rear_page_uid',            '🟠 Rear UID Number'),
+            ('auto_align_contents',      '⚙️ Auto Align'),
+            ('photo_frame',              '🖼️ Photo Frame'),
+            ('download_date',            '📅 Download Date'),
+            ('generation_date',          '📅 Generation Date'),
+            ('colored_footer',           '🎨 Colored Footer'),
+            ('aadhaar_number',           '🔢 Aadhaar Number'),
+            ('vid',                      '🔢 VID'),
+            ('epic_header_emblem',       '🏛️ EPIC Emblem'),
+        ]
+        for key, label in checkbox_items:
+            cb = QCheckBox(label)
+            cb.setChecked(self.settings['card_elements'][key])
+            cb.stateChanged.connect(self._on_inline_setting_changed)
+            self.settings_checkboxes[key] = cb
+            elem_layout.addWidget(cb)
+        isp_content_layout.addWidget(elem_group)
+
+        # ── Offsets group ──────────────────────────────────────────────
+        from PyQt5.QtWidgets import QFormLayout as QFL
+        off_group = QGB("📐 Offsets")
+        off_layout = QFL()
+        off_layout.setSpacing(4)
+        self.settings_spinboxes = {}
+        for key, label in [('front_header','Front Header'),('rear_header','Rear Header'),
+                            ('front_footer','Front Footer'),('rear_footer','Rear Footer'),
+                            ('photo','Photo')]:
+            sp = QSpinBox()
+            sp.setRange(-100, 100)
+            sp.setValue(self.settings['offsets'][key])
+            sp.valueChanged.connect(self._on_inline_setting_changed)
+            self.settings_spinboxes[key] = sp
+            off_layout.addRow(label + ":", sp)
+        off_group.setLayout(off_layout)
+        isp_content_layout.addWidget(off_group)
+
+        # ── Printing Options group ────────────────────────────────────
+        from PyQt5.QtWidgets import QCheckBox as QCB2
+        po_group = QGB("🖨️ Printing Options")
+        po_layout = QVBoxLayout(po_group)
+        po_layout.setSpacing(2)
+        self.print_options_cbs = {}
+        for key, label in [('rotate_front','Rotate Front'),('rotate_back','Rotate Back'),
+                            ('a4_cutting_guidelines','A4 Cut Guidelines'),('pdf_printing','PDF Printing')]:
+            cb = QCB2(label)
+            cb.setChecked(self.settings['printing_options'][key])
+            cb.setStyleSheet("QCheckBox{color:#e5e7eb;padding:3px;font-size:12px;}QCheckBox::indicator{width:15px;height:15px;}")
+            self.print_options_cbs[key] = cb
+            po_layout.addWidget(cb)
+        self.stamp_cb = QCB2("Stamp")
+        self.stamp_cb.setChecked(self.settings['printing_options'].get('stamp', False))
+        self.stamp_cb.setStyleSheet("QCheckBox{color:#e5e7eb;padding:3px;font-size:12px;}QCheckBox::indicator{width:15px;height:15px;}")
+        po_layout.addWidget(self.stamp_cb)
+        from PyQt5.QtWidgets import QComboBox as QComb
+        self.pdf_combo = QComb()
+        self.pdf_combo.addItems(['PDF PRINTOUT', 'CUSTOM STAMP', 'NO STAMP'])
+        self.pdf_combo.setCurrentText(self.settings['printer'].get('pdf_printout', 'PDF PRINTOUT'))
+        self.pdf_combo.setStyleSheet("QComboBox{background-color:#1e293b;border:1px solid #334155;padding:4px;color:#e5e7eb;font-size:11px;}")
+        po_layout.addWidget(self.pdf_combo)
+        isp_content_layout.addWidget(po_group)
+
+        # ── User Info group ────────────────────────────────────────────
+        ui_group = QGB("👤 User Info")
+        ui_layout = QFL()
+        self.language_combo = QComb()
+        self.language_combo.addItems(['English','Hindi','Tamil','Telugu','Bengali','Marathi','Gujarati'])
+        self.language_combo.setCurrentText(self.settings['user_info']['language'])
+        self.language_combo.setStyleSheet("QComboBox{background-color:#1e293b;border:1px solid #334155;padding:4px;color:#e5e7eb;font-size:11px;}")
+        self.font_size_combo = QComb()
+        self.font_size_combo.addItems(['Small','Medium','Large','Extra Large'])
+        self.font_size_combo.setCurrentText(self.settings['user_info']['font_size'])
+        self.font_size_combo.setStyleSheet("QComboBox{background-color:#1e293b;border:1px solid #334155;padding:4px;color:#e5e7eb;font-size:11px;}")
+        ui_layout.addRow("Language:", self.language_combo)
+        ui_layout.addRow("Font Size:", self.font_size_combo)
+        ui_group.setLayout(ui_layout)
+        isp_content_layout.addWidget(ui_group)
+
+        # ── Child Aadhaar Style ───────────────────────────────────────
+        from PyQt5.QtWidgets import QRadioButton as QRB2, QButtonGroup as QBG2
+        cs_group = QGB("👶 Child Aadhaar Style")
+        cs_layout = QHBoxLayout(cs_group)
+        self.half_panel_radio = QRB2("Half Panel")
+        self.full_panel_radio = QRB2("Full Panel")
+        for r in [self.half_panel_radio, self.full_panel_radio]:
+            r.setStyleSheet("QRadioButton{color:#e5e7eb;font-size:11px;padding:3px;}")
+            cs_layout.addWidget(r)
+        if self.settings['child_aadhaar_style'] == 'half_panel':
+            self.half_panel_radio.setChecked(True)
+        else:
+            self.full_panel_radio.setChecked(True)
+        isp_content_layout.addWidget(cs_group)
+
+        isp_content_layout.addStretch()
+        isp_scroll.setWidget(isp_content)
+        isp_outer.addWidget(isp_scroll)
+
+        # Save button at bottom
+        isp_save_btn = QPushButton("💾  Save Settings")
+        isp_save_btn.setStyleSheet("QPushButton{background-color:#10b981;color:white;padding:10px;font-weight:bold;border-radius:6px;font-size:13px;}QPushButton:hover{background-color:#059669;}")
+        isp_save_btn.clicked.connect(self.save_inline_settings)
+        isp_outer.addWidget(isp_save_btn)
+
+        center_layout.addWidget(self.inline_settings_panel)
         main_layout.addLayout(center_layout)
 
         bottom_layout = QHBoxLayout()
@@ -1114,7 +1283,10 @@ class SmartIdentityPro(QMainWindow):
             front_full_img = self.pixmap_to_qimage(front_full_pix)
             fbw, fbh = front_full_pix.width, front_full_pix.height
 
-            self.front_bg_original = QPixmap.fromImage(front_full_img)
+            _raw_front = QPixmap.fromImage(front_full_img)
+            _fw, _fh = _raw_front.width(), _raw_front.height()
+            # Crop: 8px left outer border + 24px right inner border (removes dark shadow line)
+            self.front_bg_original = _raw_front.copy(8, 3, _fw - 32, _fh - 4)
 
             ftx = int((F_TXT[0]-F_BG[0]) / (F_BG[2]-F_BG[0]) * fbw)
             fty = int((F_TXT[1]-F_BG[1]) / (F_BG[3]-F_BG[1]) * fbh)
@@ -1161,20 +1333,27 @@ class SmartIdentityPro(QMainWindow):
             back_full_img = self.pixmap_to_qimage(back_full_pix)
             bbw, bbh = back_full_pix.width, back_full_pix.height
 
-            self.back_bg_original = QPixmap.fromImage(back_full_img)
+            _raw_back = QPixmap.fromImage(back_full_img)
+            _bw, _bh = _raw_back.width(), _raw_back.height()
+            # Crop: 20px left inner border (removes dark shadow line) + 8px right outer border
+            self.back_bg_original = _raw_back.copy(20, 3, _bw - 28, _bh - 4)
 
             btx = int((B_TXT[0]-B_BG[0]) / (B_BG[2]-B_BG[0]) * bbw)
             bty = int((B_TXT[1]-B_BG[1]) / (B_BG[3]-B_BG[1]) * bbh)
             btw = int((B_TXT[2]-B_TXT[0]) / (B_BG[2]-B_BG[0]) * bbw)
             bth = int((B_TXT[3]-B_TXT[1]) / (B_BG[3]-B_BG[1]) * bbh)
 
+            # Adjust btx for the 20px left crop applied to back_bg_original
+            BACK_LEFT_CROP = 20
+            btx_cropped = btx - BACK_LEFT_CROP
+
             back_bg_with_blank = self.back_bg_original.copy()
             painter = QPainter(back_bg_with_blank)
-            painter.fillRect(btx, bty, btw, bth, Qt.white)
+            painter.fillRect(btx_cropped, bty, btw, bth, Qt.white)
             painter.end()
 
             # ── Place back card to the RIGHT of front card ──────────
-            GAP = 80  # gap in scene pixels between front and back
+            GAP = 0   # no gap
             front_w = self.front_bg_original.width()
             back_offset_x = front_w + GAP   # X start of back card in scene
 
@@ -1190,8 +1369,8 @@ class SmartIdentityPro(QMainWindow):
             self.back_data_item = DraggablePixmapItem(self.back_data_original.copy(), self)
             self.back_data_item.setZValue(5)
             # back data item position is relative to scene (add back_offset_x)
-            self.back_data_item.setPos(back_offset_x + btx, bty)
-            self.back_data_initial_pos = QPointF(back_offset_x + btx, bty)
+            self.back_data_item.setPos(back_offset_x + btx_cropped, bty)
+            self.back_data_initial_pos = QPointF(back_offset_x + btx_cropped, bty)
             self.back_data_item.setVisible(True)   # always visible
             self.scene.addItem(self.back_data_item)
 
@@ -1200,7 +1379,7 @@ class SmartIdentityPro(QMainWindow):
             mask_painter = QPainter(back_mask)
             mask_painter.drawPixmap(0, 0, self.back_bg_original)
             mask_painter.setCompositionMode(QPainter.CompositionMode_Clear)
-            mask_painter.fillRect(btx, bty, btw, bth, Qt.transparent)
+            mask_painter.fillRect(btx_cropped, bty, btw, bth, Qt.transparent)
             mask_painter.end()
 
             self.back_blank_item = QGraphicsPixmapItem(back_mask)
@@ -1213,57 +1392,23 @@ class SmartIdentityPro(QMainWindow):
             # Store back offset for overlay positioning
             self.back_card_offset_x = back_offset_x
 
-            # ── Active card highlight borders (z=50, above everything) ──
-            from PyQt5.QtWidgets import QGraphicsRectItem as QGRI
-            self.front_active_border = QGRI(
-                -4, -4,
-                self.front_bg_original.width() + 8,
-                self.front_bg_original.height() + 8
-            )
-            self.front_active_border.setPen(QPen(QColor(96, 165, 250), 8))
-            self.front_active_border.setBrush(QBrush(Qt.transparent))
-            self.front_active_border.setPos(0, 0)
-            self.front_active_border.setZValue(50)
-            self.scene.addItem(self.front_active_border)
+            # Border lines painted white directly in pixmaps — no overlay needed
 
-            self.back_active_border = QGRI(
-                -4, -4,
-                self.back_bg_original.width() + 8,
-                self.back_bg_original.height() + 8
-            )
-            self.back_active_border.setPen(QPen(QColor(148, 163, 184), 4))
-            self.back_active_border.setBrush(QBrush(Qt.transparent))
-            self.back_active_border.setPos(back_offset_x, 0)
-            self.back_active_border.setZValue(50)
-            self.scene.addItem(self.back_active_border)
+            # Active borders removed — no highlight outline on cards
+            self.front_active_border = None
+            self.back_active_border = None
 
-            # ── Labels: "FRONT" / "BACK" above each card ─────────────
-            from PyQt5.QtWidgets import QGraphicsTextItem
-            front_lbl = QGraphicsTextItem("◀ FRONT")
-            front_lbl.setDefaultTextColor(QColor(96, 165, 250))
-            front_lbl.setFont(QFont("Segoe UI", 16, QFont.Bold))
-            front_lbl.setPos(10, -55)
-            front_lbl.setZValue(50)
-            self.scene.addItem(front_lbl)
-
-            back_lbl = QGraphicsTextItem("BACK ▶")
-            back_lbl.setDefaultTextColor(QColor(148, 163, 184))
-            back_lbl.setFont(QFont("Segoe UI", 16, QFont.Bold))
-            back_lbl.setPos(back_offset_x + 10, -55)
-            back_lbl.setZValue(50)
-            self.scene.addItem(back_lbl)
+            # Labels removed — no FRONT/BACK text above cards
 
             # ── Scene rect covers both cards ──────────────────────────
             total_w = front_w + GAP + self.back_bg_original.width()
             total_h = max(self.front_bg_original.height(), self.back_bg_original.height())
-            self.scene.setSceneRect(-10, -60, total_w + 20, total_h + 70)
+            self.scene.setSceneRect(0, 0, total_w, total_h)
 
             self.canvas.resetTransform()
-            # Scale to fit both cards: each card ~1350px wide at 300dpi,
-            # total scene ~2780px wide → scale to fit in 1100px canvas width
-            scale = 1100.0 / (total_w + 20) * 0.92
+            scale = 1080.0 / total_w * 0.98
             self.canvas.scale(scale, scale)
-            self.canvas.centerOn(self.scene.sceneRect().center())
+            self.canvas.centerOn(QPointF(total_w / 2, total_h / 2))
             self.pdf_loaded = True
             self.update_spinboxes_from_item()
 
@@ -1297,16 +1442,7 @@ class SmartIdentityPro(QMainWindow):
             return
         is_front = self.front_radio.isChecked()
 
-        # All items always visible — just update the active highlight borders
-        if hasattr(self, 'front_active_border') and self.front_active_border:
-            if is_front:
-                # Front active: bright blue thick border
-                self.front_active_border.setPen(QPen(QColor(96, 165, 250), 8))
-                self.back_active_border.setPen(QPen(QColor(71, 85, 105), 3))
-            else:
-                # Back active: bright blue thick border on back
-                self.front_active_border.setPen(QPen(QColor(71, 85, 105), 3))
-                self.back_active_border.setPen(QPen(QColor(96, 165, 250), 8))
+        # No border highlights — both cards always shown without outlines
 
         # Pan canvas to center on the active card
         active_bg = self.front_bg_item if is_front else self.back_bg_item
@@ -1417,12 +1553,11 @@ class SmartIdentityPro(QMainWindow):
 
     def reset_view(self):
         self.canvas.resetTransform()
-        if self.scene.sceneRect().width() > 0:
-            self.canvas.fitInView(self.scene.sceneRect(), Qt.KeepAspectRatio)
-        else:
-            active_bg = self.front_bg_item if self.front_radio.isChecked() else self.back_bg_item
-            if active_bg:
-                self.canvas.fitInView(active_bg.boundingRect(), Qt.KeepAspectRatio)
+        sr = self.scene.sceneRect()
+        if sr.width() > 0:
+            scale = 1080.0 / sr.width() * 0.98
+            self.canvas.scale(scale, scale)
+            self.canvas.centerOn(sr.center())
 
     def check_license_on_start(self):
         if self.is_demo:
@@ -1968,7 +2103,56 @@ class SmartIdentityPro(QMainWindow):
 
     def toggle_settings_panel(self, checked):
         self.settings_panel.setVisible(checked)
-        self.settings_header.setText("⚙️ Settings ▲" if checked else "⚙️ Settings ▼")
+
+    def toggle_inline_settings(self, checked=None):
+        """Show/hide the inline settings panel. Checks button state if checked is None."""
+        if checked is None:
+            checked = not self.inline_settings_panel.isVisible()
+        self.inline_settings_panel.setVisible(checked)
+        # Keep button state in sync
+        self.settings_header.blockSignals(True)
+        self.settings_header.setChecked(checked)
+        self.settings_header.setText("⚙ Settings ✓" if checked else "⚙ Settings")
+        self.settings_header.blockSignals(False)
+
+    def close_inline_settings(self):
+        self.toggle_inline_settings(False)
+
+    def _on_inline_setting_changed(self):
+        """Called on every checkbox/spinbox change — apply live preview immediately."""
+        if not self.pdf_loaded:
+            return
+        # Sync checkbox values to settings dict
+        for key, cb in self.settings_checkboxes.items():
+            self.settings['card_elements'][key] = cb.isChecked()
+        for key, sp in self.settings_spinboxes.items():
+            self.settings['offsets'][key] = sp.value()
+        # Redraw overlays immediately
+        self.create_card_overlays()
+        self._update_overlay_visibility()
+
+    def save_inline_settings(self):
+        """Persist all inline settings and close the panel."""
+        # Card elements already synced via _on_inline_setting_changed
+        for key, cb in self.settings_checkboxes.items():
+            self.settings['card_elements'][key] = cb.isChecked()
+        for key, sp in self.settings_spinboxes.items():
+            self.settings['offsets'][key] = sp.value()
+        # Printing options
+        for key, cb in self.print_options_cbs.items():
+            self.settings['printing_options'][key] = cb.isChecked()
+        self.settings['printing_options']['stamp'] = self.stamp_cb.isChecked()
+        self.settings['printer']['pdf_printout'] = self.pdf_combo.currentText()
+        # User info
+        self.settings['user_info']['language'] = self.language_combo.currentText()
+        self.settings['user_info']['font_size'] = self.font_size_combo.currentText()
+        # Child Aadhaar style
+        self.settings['child_aadhaar_style'] = 'half_panel' if self.half_panel_radio.isChecked() else 'full_panel'
+        # Apply overlays and close
+        self.create_card_overlays()
+        self._update_overlay_visibility()
+        self.close_inline_settings()
+        self.status_label.setText("✅ Settings saved")
 
     def update_setting(self, category, key, value):
         self.settings[category][key] = value
