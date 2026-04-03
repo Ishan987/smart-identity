@@ -436,8 +436,10 @@ class SmartIdentityPro(QMainWindow):
 
     def _update_overlay_visibility(self):
         """
-        Both cards always shown — all overlays always visible.
-        Just make sure all overlay items are shown.
+        Overlays are created only when a setting is OFF (i.e. hide that region).
+        So if an overlay exists it should always be shown in the preview scene.
+        If a setting is ON (region visible), the overlay is removed entirely by
+        create_card_overlays(), so there is nothing to hide here.
         """
         for attr, item in self._all_overlay_items():
             item.setVisible(True)
@@ -2781,6 +2783,7 @@ class SmartIdentityPro(QMainWindow):
         temp_scene = QGraphicsScene()
 
         if side == 'front':
+            bg_scene_pos = self.front_bg_item.pos()
             bg_item = QGraphicsPixmapItem(self.front_bg_item.pixmap())
             bg_item.setPos(0, 0)
             bg_item.setTransformationMode(Qt.SmoothTransformation)
@@ -2798,17 +2801,21 @@ class SmartIdentityPro(QMainWindow):
                 mask_item.setTransformationMode(Qt.SmoothTransformation)
                 temp_scene.addItem(mask_item)
 
+            overlay_attrs = [
+                'front_header_overlay', 'front_footer_overlay',
+                'front_footer_text_overlay', 'front_photo_frame_overlay',
+                'front_aadhaar_num_overlay', 'front_vid_overlay',
+            ]
             rect = bg_item.boundingRect()
         else:
-            # Back card is offset in main scene — render it at (0,0) in temp_scene
             offset_x = getattr(self, 'back_card_offset_x', 0)
+            bg_scene_pos = self.back_bg_item.pos()
             bg_item = QGraphicsPixmapItem(self.back_bg_item.pixmap())
             bg_item.setPos(0, 0)
             bg_item.setTransformationMode(Qt.SmoothTransformation)
             temp_scene.addItem(bg_item)
 
             data_item = QGraphicsPixmapItem(self.back_data_item.pixmap())
-            # Subtract the scene offset so position is card-relative
             data_pos = self.back_data_item.pos()
             data_item.setPos(data_pos.x() - offset_x, data_pos.y())
             data_item.setTransform(self.back_data_item.transform())
@@ -2821,7 +2828,26 @@ class SmartIdentityPro(QMainWindow):
                 mask_item.setTransformationMode(Qt.SmoothTransformation)
                 temp_scene.addItem(mask_item)
 
+            overlay_attrs = [
+                'back_header_overlay', 'back_footer_overlay',
+                'back_footer_overlay2', 'back_instruction_overlay',
+                'back_uid_overlay', 'back_vid_overlay',
+            ]
             rect = bg_item.boundingRect()
+
+        for attr in overlay_attrs:
+            overlay = getattr(self, attr, None)
+            if overlay is not None:
+                local_x = overlay.pos().x() - bg_scene_pos.x()
+                local_y = overlay.pos().y() - bg_scene_pos.y()
+                w = overlay.rect().width()
+                h = overlay.rect().height()
+                ov_copy = QGraphicsRectItem(0, 0, w, h)
+                ov_copy.setBrush(overlay.brush())
+                ov_copy.setPen(overlay.pen())
+                ov_copy.setPos(local_x, local_y)
+                ov_copy.setZValue(20)
+                temp_scene.addItem(ov_copy)
 
         temp_scene.setSceneRect(rect)
 
@@ -2985,7 +3011,9 @@ class SmartIdentityPro(QMainWindow):
         painter.setRenderHint(QPainter.SmoothPixmapTransform)
 
         if side == 'front':
-            card_base = self.front_bg_item.pixmap().copy()
+            bg_item = self.front_bg_item
+            card_base = bg_item.pixmap().copy()
+            bg_scene_pos = bg_item.pos()
             card_painter = QPainter(card_base)
             card_painter.setRenderHint(QPainter.Antialiasing)
             card_painter.setRenderHint(QPainter.SmoothPixmapTransform)
@@ -2996,9 +3024,18 @@ class SmartIdentityPro(QMainWindow):
             card_painter.restore()
             if self.front_blank_item:
                 card_painter.drawPixmap(0, 0, self.front_blank_item.pixmap())
-            card_painter.end()
+            overlay_attrs = [
+                'front_header_overlay',
+                'front_footer_overlay',
+                'front_footer_text_overlay',
+                'front_photo_frame_overlay',
+                'front_aadhaar_num_overlay',
+                'front_vid_overlay',
+            ]
         else:
-            card_base = self.back_bg_item.pixmap().copy()
+            bg_item = self.back_bg_item
+            card_base = bg_item.pixmap().copy()
+            bg_scene_pos = bg_item.pos()
             card_painter = QPainter(card_base)
             card_painter.setRenderHint(QPainter.Antialiasing)
             card_painter.setRenderHint(QPainter.SmoothPixmapTransform)
@@ -3011,7 +3048,35 @@ class SmartIdentityPro(QMainWindow):
             card_painter.restore()
             if self.back_blank_item:
                 card_painter.drawPixmap(0, 0, self.back_blank_item.pixmap())
-            card_painter.end()
+            overlay_attrs = [
+                'back_header_overlay',
+                'back_footer_overlay',
+                'back_footer_overlay2',
+                'back_instruction_overlay',
+                'back_uid_overlay',
+                'back_vid_overlay',
+            ]
+
+        # ── Draw overlay masks (header/footer hiders) onto card pixmap ──
+        # Same logic as render_card_to_painter — overlay existing = setting OFF
+        print(f"[DEBUG PREVIEW] side={side}, bg_scene_pos=({bg_scene_pos.x():.0f},{bg_scene_pos.y():.0f})")
+        for attr in overlay_attrs:
+            overlay = getattr(self, attr, None)
+            print(f"[DEBUG PREVIEW] {attr} = {overlay}")
+            if overlay is not None:
+                local_x = int(overlay.pos().x() - bg_scene_pos.x())
+                local_y = int(overlay.pos().y() - bg_scene_pos.y())
+                rect = overlay.rect()
+                w = int(rect.width())
+                h = int(rect.height())
+                print(f"[DEBUG PREVIEW] Drawing {attr}: local_x={local_x} local_y={local_y} w={w} h={h}")
+                card_painter.save()
+                card_painter.setPen(overlay.pen())
+                card_painter.setBrush(overlay.brush())
+                card_painter.drawRect(local_x, local_y, w, h)
+                card_painter.restore()
+
+        card_painter.end()
 
         card_width = card_base.width()
         card_height = card_base.height()
@@ -3123,8 +3188,10 @@ class SmartIdentityPro(QMainWindow):
 
         if side == 'front':
             bg_pixmap = self.front_bg_item.pixmap()
+            bg_scene_pos = self.front_bg_item.pos()
         else:
             bg_pixmap = self.back_bg_item.pixmap()
+            bg_scene_pos = self.back_bg_item.pos()
 
         card_width = bg_pixmap.width()
         card_height = bg_pixmap.height()
@@ -3156,6 +3223,48 @@ class SmartIdentityPro(QMainWindow):
             card_painter.restore()
             if self.back_blank_item:
                 card_painter.drawPixmap(0, 0, self.back_blank_item.pixmap())
+
+        # ── Draw overlay items (header/footer masks) onto the card pixmap ──
+        # Overlays exist in scene coordinates; translate them to card-local
+        # coordinates so they cover the correct region on the printed output.
+        if side == 'front':
+            overlay_attrs = [
+                'front_header_overlay',
+                'front_footer_overlay',
+                'front_footer_text_overlay',
+                'front_photo_frame_overlay',
+                'front_aadhaar_num_overlay',
+                'front_vid_overlay',
+            ]
+        else:
+            overlay_attrs = [
+                'back_header_overlay',
+                'back_footer_overlay',
+                'back_footer_overlay2',
+                'back_instruction_overlay',
+                'back_uid_overlay',
+                'back_vid_overlay',
+            ]
+
+        for attr in overlay_attrs:
+            overlay = getattr(self, attr, None)
+            # overlay being non-None means the setting is OFF (hide that region).
+            # We intentionally skip the isVisible() check because
+            # _update_overlay_visibility() always sets visible=True for all
+            # existing overlays, so that check was causing overlays to always
+            # be drawn even when settings had not changed them.
+            if overlay is not None:
+                # Convert scene position to card-local coordinates
+                local_x = int(overlay.pos().x() - bg_scene_pos.x())
+                local_y = int(overlay.pos().y() - bg_scene_pos.y())
+                rect = overlay.rect()
+                w = int(rect.width())
+                h = int(rect.height())
+                card_painter.save()
+                card_painter.setPen(overlay.pen())
+                card_painter.setBrush(overlay.brush())
+                card_painter.drawRect(local_x, local_y, w, h)
+                card_painter.restore()
 
         card_painter.end()
 
